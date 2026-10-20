@@ -6,24 +6,7 @@ Widget de desktop para Ubuntu que mostra **o que está saindo do seu computador*
 - **Nenhuma telemetria**: nada sai do computador por causa do NetWatch, exceto as consultas de DNS reverso, que podem ser desligadas.
 - Histórico **local**, com retenção configurável e botão para apagar tudo.
 
-```
-┌──────────────────────────────────┐
-│ NETWATCH ● Monitorando   ⚠ 1 ─ × │
-│ SAINDO DO PC                     │
-│ ↑ 172 KB/s              ↓ 1 MB/s │
-│ ▁▂▅▇▃▁  (últimos 60 s)           │
-│ Enviado na sessão       124.8 MB │
-│ PARA ONDE ESTÁ INDO              │
-│ ● python3 sync.py ↑ 80 KB/s 40 MB│
-│   2 conn · 6.6.6.6               │
-│   firefox         ↑ 12 KB/s 3 MB │
-│   8 conn · …facebook.com +5      │
-│ Sem atribuição ↑ 250 B/s         │
-│ NOVAS CONEXÕES                   │
-│ 15:59:44 claude → 160.79.104.10  │
-│ [Detalhes] [Pausar] [Config.]    │
-└──────────────────────────────────┘
-```
+<img width="329" height="469" alt="Screenshot From 2026-10-20 18-13-20" src="https://github.com/user-attachments/assets/ecac89cb-f52d-46ae-b7fc-59098a1f801f" />
 
 ## Sumário
 
