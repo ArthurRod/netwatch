@@ -45,17 +45,21 @@ Widget de desktop para Ubuntu que mostra **o que está saindo do seu computador*
 | Python | 3.12 ou superior (testado no 3.14) | `python3-venv` para criar o ambiente |
 | `ss` (iproute2) | já vem no Ubuntu | bytes por conexão TCP |
 | Bibliotecas xcb do Qt | — | só para "sempre visível" no Wayland, veja abaixo |
+| `bpftrace` | 0.25 | só para o helper privilegiado opcional |
 
 ## Instalação
 
-### 1. Baixar e criar o ambiente
+### 1. Baixar e instalar
 
 ```bash
 git clone git@github.com:ArthurRod/netwatch.git
 cd netwatch
-python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+scripts/install.sh
 ```
+
+O script cria um ambiente isolado em `~/.local/share/netwatch-app/` e adiciona o **NetWatch** ao menu de aplicativos, para abrir sem terminal. Não pede `sudo`: se faltar algo do sistema, ele mostra o comando `apt` exato.
+
+Para atualizar depois de um `git pull`, rode `scripts/install.sh` de novo.
 
 ### 2. "Sempre visível" no GNOME Wayland (recomendado)
 
@@ -67,23 +71,20 @@ sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1
 
 Sem elas, o NetWatch abre no Wayland nativo e registra um aviso no log.
 
-### 3. Atalho no menu de aplicativos
+### 3. Iniciar com o Ubuntu (opcional)
+
+Em **Config.** → **Iniciar automaticamente ao entrar no Ubuntu**. Isso cria `~/.config/autostart/netwatch.desktop`.
+
+### 4. Helper privilegiado (opcional)
+
+Fecha os pontos cegos do modo sem privilégios: conexões rápidas, processos de root, bytes finais de cada conexão e o domínio real pedido via DNS.
 
 ```bash
-mkdir -p ~/.local/share/applications
-sed "s|@NETWATCH_BIN@|$PWD/.venv/bin/netwatch|" packaging/netwatch.desktop \
-  > ~/.local/share/applications/netwatch.desktop
+sudo apt install bpftrace
+sudo scripts/install-helper.sh
 ```
 
-Depois disso, o **NetWatch** aparece na busca de aplicativos do GNOME e abre sem terminal.
-
-### 4. Abrir
-
-Pelo menu de aplicativos, ou:
-
-```bash
-.venv/bin/netwatch
-```
+Veja [`docs/helper.md`](docs/helper.md) para o modelo de segurança antes de instalar.
 
 ## Uso
 
@@ -107,7 +108,7 @@ Pelo menu de aplicativos, ou:
 
 | Aba | Para que serve |
 |---|---|
-| **Agora** | Todas as conexões no momento: processo, PID, destino, domínio, porta, bytes, estado. Busca por processo, IP, domínio, comando ou caminho. Selecione uma linha para ver o comando completo, o executável e a cadeia de processos pais. **Congelar** pausa a tabela enquanto você investiga. |
+| **Agora** | Todas as conexões no momento: processo, PID, destino, domínio, porta, bytes, estado. Busca por processo, IP, domínio, comando ou caminho. **Somente novas** mostra o que apareceu nos últimos 5 minutos (exceto o que já estava aberto quando o app iniciou). Selecione uma linha para ver o comando completo, o executável e a cadeia de processos pais. **Congelar** pausa a tabela enquanto você investiga. |
 | **Alertas** | Processos com sinais de suspeita na sessão. **Confiar neste processo** para de destacá-lo e de notificar. |
 | **Histórico** | Conexões gravadas, mesmo depois de fechar o app. A visão **Por processo** responde "quem mais enviou nas últimas 24 h". Tem filtros de período, protocolo e busca, **Exportar CSV** e **Apagar histórico**. |
 
@@ -125,11 +126,13 @@ Sinais médios e altos geram **uma notificação na bandeja** por processo. São
 
 ### Domínios
 
-O NetWatch consulta o **nome reverso (PTR)** de cada IP e confere se o nome resolve de volta para o mesmo IP.
-
-- `nome` = confirmado. Indica o dono da infraestrutura (ex.: `…googleusercontent.com`), não necessariamente o site acessado.
-- `nome?` = **não confirmado**. Quem controla o IP escolhe esse nome, então ele pode ser falso.
-- `—` = sem nome. É o caso comum para Google (IPv6), Cloudflare e Fastly.
+| Exibição | Origem | Confiança |
+|---|---|---|
+| `discord.com` | **DNS observado** (com o helper): o nome que um programa pediu e cuja resposta foi este IP | alta |
+| `discord.com?` | DNS observado, mas o IP respondeu por **mais de um nome** (CDN); os outros aparecem no tooltip | incerta |
+| `…googleusercontent.com` | **Nome reverso (PTR) confirmado**: indica o dono da infraestrutura, não necessariamente o site | média |
+| `nome?` | Nome reverso **não confirmado**: quem controla o IP escolhe esse nome, então ele pode ser falso | baixa |
+| `—` | Sem nome. Comum para Google (IPv6), Cloudflare e Fastly sem o helper | — |
 
 ## Configurações
 
@@ -137,6 +140,7 @@ Botão **Config.** no widget:
 
 | Opção | Padrão |
 |---|---|
+| Iniciar automaticamente ao entrar no Ubuntu | desligado |
 | Opacidade | 92% |
 | Intervalo de coleta | 1000 ms |
 | Manter sobre outras janelas | ligado |
@@ -151,6 +155,8 @@ Botão **Config.** no widget:
 |---|---|---|
 | `~/.config/netwatch/config.json` | Preferências e processos confiáveis | `0600` |
 | `~/.local/share/netwatch/history.db` | Histórico de conexões de saída | `0600` (pasta `0700`) |
+| `~/.local/share/netwatch-app/` | Ambiente Python do app (criado pelo instalador) | padrão |
+| `~/.config/autostart/netwatch.desktop` | Só se o início automático estiver ligado | padrão |
 | `~/.local/state/netwatch/netwatch.log` | Log de diagnóstico (rotativo, 1 MB × 3) | padrão |
 
 - Senhas e tokens na linha de comando (`--password X`, `--api-key=X`, `TOKEN=X`, `Bearer X`, `user:senha@` em URLs) são mascarados antes de aparecer na tela ou ir para o disco. A máscara é por padrão de nome e não garante pegar todo segredo.
@@ -160,9 +166,9 @@ Botão **Config.** no widget:
 ## Desinstalação
 
 ```bash
-rm -f ~/.local/share/applications/netwatch.desktop
-rm -rf ~/.config/netwatch ~/.local/share/netwatch ~/.local/state/netwatch
-rm -rf /caminho/do/clone/netwatch
+scripts/uninstall.sh            # remove o app; mantém preferências, histórico e logs
+scripts/uninstall.sh --purge    # remove também preferências, histórico e logs
+sudo scripts/uninstall-helper.sh   # se o helper foi instalado
 ```
 
 As bibliotecas xcb, se não forem usadas por mais nada:
@@ -173,21 +179,25 @@ sudo apt remove libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1
 
 ## Limitações
 
-Sem privilégios, alguns pontos ficam cegos:
-
-| Ponto cego | Consequência |
-|---|---|
-| Conexões que abrem e fecham em menos de 1 s | Não são vistas; o envio delas aparece em "Sem atribuição" |
-| Processos de outros usuários (root, daemons) | Aparecem como "sem permissão", sem bytes por processo e sem sinais |
-| UDP, incluindo QUIC/HTTP3 | Sem bytes por conexão; o envio vai para "Sem atribuição" |
-| Domínio real pedido pelo programa | Só o nome reverso, que costuma não existir para CDNs |
+| Ponto cego | Sem o helper | Com o helper |
+|---|---|---|
+| Conexões TCP que abrem e fecham em menos de 1 s | não vistas; envio em "Sem atribuição" | ✅ vistas, com bytes |
+| Bytes finais de cada conexão TCP | último trecho perdido (~5% num download medido) | ✅ lidos no fechamento |
+| Processos de root e de outros usuários | "sem permissão" | ✅ identificados |
+| Domínio pedido pelo programa | só nome reverso (raro em CDN) | ✅ DNS observado |
+| Bytes de UDP, incluindo QUIC/HTTP3 | "Sem atribuição" | "Sem atribuição" |
 
 Com a máquina ociosa, "Sem atribuição" fica em torno de 250 B/s. São cabeçalhos e ACKs do TCP, medidos e explicados em `docs/architecture.md`.
+
+O NetWatch observa a máquina de dentro. Um malware com root pode se esconder de qualquer ferramenta local, inclusive desta; para esse nível de ameaça, a observação precisa vir de fora (roteador ou firewall da rede).
 
 ## Desenvolvimento
 
 ```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest
+.venv/bin/netwatch
 ```
 
 ```
@@ -197,6 +207,8 @@ src/netwatch/
 ├── services/     thread de monitoramento, histórico assíncrono, DNS reverso, CSV
 ├── storage/      SQLite (esquema versionado, gravação e consultas)
 └── ui/           widget, janela de detalhes, abas, configurações
+helper/           serviço privilegiado opcional (bpftrace + DNS do systemd-resolved)
+scripts/          instalação e desinstalação do app e do helper
 ```
 
 A interface só recebe dados normalizados (`Snapshot`) por sinal Qt. Coleta, gravação e DNS rodam fora da thread da interface.
@@ -205,3 +217,5 @@ A interface só recebe dados normalizados (`Snapshot`) por sinal Qt. Coleta, gra
 
 - [`docs/architecture.md`](docs/architecture.md): fluxo de dados, metodologia de medição por processo, histórico, sinais, DNS reverso, limitações medidas.
 - [`docs/permissions.md`](docs/permissions.md): o que precisa ou não de privilégio, e o comportamento no Wayland e no X11.
+- [`docs/helper.md`](docs/helper.md): helper privilegiado, modelo de segurança e protocolo.
+- [`docs/validation.md`](docs/validation.md): critérios de aceitação do plano e o resultado de cada validação.

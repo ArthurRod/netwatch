@@ -9,7 +9,9 @@ from netwatch.models.connection import Snapshot
 from netwatch.models.process import ProcessIdentity
 from netwatch.monitoring.collector import SnapshotBuilder
 from netwatch.monitoring.signals import SignalDetector
+from netwatch.monitoring.helper_events import HelperState
 from netwatch.services.domain_resolver import DomainResolver
+from netwatch.services.helper_client import HelperClient
 from netwatch.storage.history import HistoryRecorder
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,12 @@ class _Worker(QObject):
     @Slot()
     def start(self) -> None:
         self._open_history()
-        self._builder = SnapshotBuilder(resolver=DomainResolver() if self._resolve_names else None)
+        helper = HelperClient()
+        helper.start()
+        self._builder = SnapshotBuilder(
+            resolver=DomainResolver() if self._resolve_names else None,
+            helper=HelperState(helper),
+        )
         self._detector = SignalDetector(self._is_known, self._learning_until)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)

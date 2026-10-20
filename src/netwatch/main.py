@@ -14,6 +14,7 @@ from netwatch.config import Settings, SettingsStore
 from netwatch.models.connection import Snapshot
 from netwatch.models.signals import Severity
 from netwatch.monitoring.signals import untrusted_alerts
+from netwatch.services import desktop_entries as autostart
 from netwatch.services.history_service import HistoryService
 from netwatch.services.monitor_service import MonitorService
 from netwatch.storage.database import default_database_path
@@ -184,9 +185,10 @@ class NetWatchApp:
             )
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self._settings, self._app.platformName())
+        dialog = SettingsDialog(self._settings, self._app.platformName(), autostart.is_enabled())
         if not dialog.exec():
             return
+        self._apply_autostart(dialog.autostart_enabled())
         updated = dialog.result_settings()
         self._widget.set_opacity(updated.opacity)
         if updated.always_on_top != self._settings.always_on_top:
@@ -200,6 +202,12 @@ class NetWatchApp:
         self._monitor.set_resolve_names(updated.resolve_names)
         self._settings = updated
         self._save_settings()
+
+    def _apply_autostart(self, enabled: bool) -> None:
+        try:
+            autostart.set_enabled(enabled)
+        except OSError:
+            logger.exception("Could not update autostart entry")
 
     def _remember_position(self, position: QPoint) -> None:
         if not self._can_position:

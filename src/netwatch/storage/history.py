@@ -10,6 +10,7 @@ from netwatch.models.history import HistoryEntry, HistoryQuery, ProcessHistory
 from netwatch.storage.database import open_database
 
 LAST_SEEN_REFRESH_SECONDS = 60
+BYTES_REFRESH_SECONDS = 15
 PRUNE_INTERVAL_SECONDS = 3600
 LEARNING_SECONDS = 86_400
 SECONDS_PER_DAY = 86_400
@@ -18,16 +19,20 @@ INSERT = """
 INSERT INTO connections (
     first_seen, seen_at_start, last_seen, protocol, local_ip, local_port, remote_ip, remote_port,
     status, pid, process_label, exe, exe_deleted, command, username, lineage, bytes_sent, bytes_received,
-    remote_name, remote_name_confirmed
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    remote_name, remote_name_confirmed, remote_name_source
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 UPDATE = """
 UPDATE connections SET last_seen = ?, status = ?, bytes_sent = ?, bytes_received = ?,
-    remote_name = ?, remote_name_confirmed = ? WHERE id = ?
+    remote_name = ?, remote_name_confirmed = ?, remote_name_source = ? WHERE id = ?
 """
 
 CLOSE = "UPDATE connections SET last_seen = ?, closed_at = ? WHERE id = ?"
+
+CLOSE_WITH_BYTES = """
+UPDATE connections SET last_seen = ?, closed_at = ?, bytes_sent = ?, bytes_received = ? WHERE id = ?
+"""
 
 
 @dataclass(slots=True)
@@ -38,6 +43,8 @@ class _OpenRow:
     bytes_received: int | None
     remote_name: RemoteName | None
     written_at: float
+    latest_sent: int | None = None
+    latest_received: int | None = None
 
 
 class HistoryRecorder:
@@ -49,6 +56,7 @@ class HistoryRecorder:
         self._previous_time: float | None = None
         self._pruned_at: float | None = None
         self._session_start = clock()
+        self._data_version = self._read_data_version()
         oldest = self._db.execute("SELECT MIN(first_seen) FROM connections").fetchone()[0]
         self._history_start = oldest if oldest is not None else self._session_start
 
@@ -73,24 +81,62 @@ class HistoryRecorder:
         now = snapshot.taken_at.timestamp()
         first_run = self._previous_time is None
         current = {c.key: c for c in snapshot.connections if c.is_outbound}
+        self._forget_rows_deleted_elsewhere()
         with self._db:
+            for closed in snapshot.closed_connections:
+                self._record_closed(closed, now, current)
             for key, connection in current.items():
                 row = self._open.get(key)
                 if row is None:
                     self._open[key] = self._insert(connection, now, first_run)
-                elif self._changed(row, connection) or now - row.written_at >= LAST_SEEN_REFRESH_SECONDS:
+                elif self._due(row, connection, now):
                     self._update(key, row, connection, now)
+                else:
+                    row.latest_sent = connection.bytes_sent
+                    row.latest_received = connection.bytes_received
             for key in set(self._open) - set(current):
                 row = self._open.pop(key)
-                self._db.execute(CLOSE, (self._previous_time or now, now, row.id))
+                self._db.execute(
+                    CLOSE_WITH_BYTES,
+                    (self._previous_time or now, now, row.latest_sent, row.latest_received, row.id),
+                )
         self._previous_time = now
         self._prune_if_due()
+
+    def _read_data_version(self) -> int:
+        return self._db.execute("PRAGMA data_version").fetchone()[0]
+
+    def _forget_rows_deleted_elsewhere(self) -> None:
+        version = self._read_data_version()
+        if version == self._data_version:
+            return
+        self._data_version = version
+        if not self._open:
+            return
+        ids = [row.id for row in self._open.values()]
+        placeholders = ",".join("?" * len(ids))
+        existing = {row[0] for row in self._db.execute(f"SELECT id FROM connections WHERE id IN ({placeholders})", ids)}
+        self._open = {key: row for key, row in self._open.items() if row.id in existing}
+
+    def _record_closed(self, closed: Connection, now: float, current: dict[tuple, Connection]) -> None:
+        socket_key = (closed.local, closed.remote)
+        key = next((k for k in self._open if (k[1], k[2]) == socket_key), None)
+        if key is None:
+            row = self._insert(closed, now, False)
+            self._db.execute(CLOSE, (now, now, row.id))
+            return
+        row = self._open.pop(key)
+        current.pop(key, None)
+        self._db.execute(CLOSE_WITH_BYTES, (now, now, closed.bytes_sent, closed.bytes_received, row.id))
 
     def close(self) -> None:
         if self._previous_time is not None:
             with self._db:
                 for row in self._open.values():
-                    self._db.execute("UPDATE connections SET last_seen = ? WHERE id = ?", (self._previous_time, row.id))
+                    self._db.execute(
+                        "UPDATE connections SET last_seen = ?, bytes_sent = ?, bytes_received = ? WHERE id = ?",
+                        (self._previous_time, row.latest_sent, row.latest_received, row.id),
+                    )
         self._open.clear()
         self._db.close()
 
@@ -127,6 +173,8 @@ class HistoryRecorder:
             connection.bytes_received,
             connection.remote_name,
             now,
+            connection.bytes_sent,
+            connection.bytes_received,
         )
 
     def _update(self, key: tuple, row: _OpenRow, connection: Connection, now: float) -> None:
@@ -147,17 +195,18 @@ class HistoryRecorder:
         row.status = connection.status
         row.bytes_sent = connection.bytes_sent
         row.bytes_received = connection.bytes_received
+        row.latest_sent = connection.bytes_sent
+        row.latest_received = connection.bytes_received
         row.remote_name = connection.remote_name
         row.written_at = now
 
     @staticmethod
-    def _changed(row: _OpenRow, connection: Connection) -> bool:
-        return (row.status, row.bytes_sent, row.bytes_received, row.remote_name) != (
-            connection.status,
-            connection.bytes_sent,
-            connection.bytes_received,
-            connection.remote_name,
-        )
+    def _due(row: _OpenRow, connection: Connection, now: float) -> bool:
+        age = now - row.written_at
+        if (row.status, row.remote_name) != (connection.status, connection.remote_name):
+            return True
+        bytes_changed = (row.bytes_sent, row.bytes_received) != (connection.bytes_sent, connection.bytes_received)
+        return (bytes_changed and age >= BYTES_REFRESH_SECONDS) or age >= LAST_SEEN_REFRESH_SECONDS
 
     def _prune_if_due(self) -> None:
         now = self._clock()
@@ -167,10 +216,10 @@ class HistoryRecorder:
         prune(self._db, self._retention_days, now)
 
 
-def _name_columns(name: RemoteName | None) -> tuple[str | None, int | None]:
+def _name_columns(name: RemoteName | None) -> tuple[str | None, int | None, str | None]:
     if name is None:
-        return None, None
-    return name.name, int(name.confirmed)
+        return None, None, None
+    return name.name, int(name.confirmed), name.source.value
 
 
 def prune(db: sqlite3.Connection, retention_days: int, now: float) -> int:
@@ -238,6 +287,7 @@ class HistoryReader:
                 bytes_received=row["bytes_received"],
                 remote_name=row["remote_name"],
                 remote_name_confirmed=bool(row["remote_name_confirmed"]),
+                remote_name_source=row["remote_name_source"],
             )
             for row in rows
         ]

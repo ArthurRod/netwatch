@@ -3,6 +3,8 @@ from enum import StrEnum
 
 
 class NameSource(StrEnum):
+    DNS_OBSERVED = "dns_observed"
+    DNS_AMBIGUOUS = "dns_ambiguous"
     REVERSE_CONFIRMED = "reverse_confirmed"
     REVERSE_UNCONFIRMED = "reverse_unconfirmed"
 
@@ -11,7 +13,8 @@ class NameSource(StrEnum):
 class RemoteName:
     name: str
     source: NameSource
+    alternatives: tuple[str, ...] = ()
 
     @property
     def confirmed(self) -> bool:
-        return self.source is NameSource.REVERSE_CONFIRMED
+        return self.source in (NameSource.DNS_OBSERVED, NameSource.REVERSE_CONFIRMED)

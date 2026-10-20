@@ -35,6 +35,7 @@ class Connection:
     process: ProcessIdentity | None = None
     remote_is_local: bool = False
     remote_name: RemoteName | None = None
+    seen_at_start: bool = False
 
     @property
     def group_key(self) -> str | None:
@@ -112,6 +113,12 @@ class Snapshot:
     unattributed_sent_per_second: float | None = None
     learning_until: float | None = None
     remote_names: dict[str, RemoteName] = field(default_factory=dict)
+    closed_connections: tuple[Connection, ...] = ()
+    helper_status: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def helper_active(self) -> bool:
+        return self.helper_status.get("tcp") == "running"
 
     @property
     def outbound_count(self) -> int:

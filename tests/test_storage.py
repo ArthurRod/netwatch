@@ -186,7 +186,7 @@ def test_csv_neutralizes_formulas(tmp_path):
 def test_schema_version_is_set(tmp_path):
     path = tmp_path / "history.db"
     recorder(path).close()
-    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == 2
+    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == 3
 
 
 def test_migrates_v1_database_and_keeps_rows(tmp_path):
@@ -204,7 +204,7 @@ def test_migrates_v1_database_and_keeps_rows(tmp_path):
     db = open_database(path)
     row = db.execute("SELECT remote_ip, remote_name FROM connections").fetchone()
     assert (row["remote_ip"], row["remote_name"]) == ("6.6.6.6", None)
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 3
 
 
 def test_concurrent_opens_migrate_once(tmp_path):
@@ -239,3 +239,31 @@ def test_process_first_seen_flags_connections_open_before_monitoring(tmp_path):
     assert by_label["python3 sync.py"].first_seen == BASE
     assert by_label["python3 sync.py"].first_seen_at_start is True
     assert by_label["curl"].first_seen_at_start is True
+
+
+def test_byte_updates_are_throttled_but_close_writes_latest(tmp_path):
+    path = tmp_path / "history.db"
+    rec = recorder(path)
+    rec.record(snapshot(0, tcp(1, 100)))
+    for second in range(1, 10):
+        rec.record(snapshot(second, tcp(1, 100 + second * 10)))
+    rec._db.commit()
+    assert HistoryReader(path).connections(HistoryQuery())[0].bytes_sent == 100
+    rec.record(snapshot(16, tcp(1, 900)))
+    assert HistoryReader(path).connections(HistoryQuery())[0].bytes_sent == 900
+    rec.record(snapshot(17, tcp(1, 950)))
+    rec.record(snapshot(18))
+    rec.close()
+    entry = HistoryReader(path).connections(HistoryQuery())[0]
+    assert entry.bytes_sent == 950
+    assert entry.closed_at == BASE + 18
+
+
+def test_app_close_writes_latest_bytes_of_open_rows(tmp_path):
+    path = tmp_path / "history.db"
+    rec = recorder(path)
+    rec.record(snapshot(0, tcp(1, 100)))
+    rec.record(snapshot(1, tcp(1, 300)))
+    rec.close()
+    entry = HistoryReader(path).connections(HistoryQuery())[0]
+    assert (entry.bytes_sent, entry.closed_at, entry.last_seen) == (300, None, BASE + 1)

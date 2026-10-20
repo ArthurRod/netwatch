@@ -141,6 +141,9 @@ class FloatingWidget(QWidget):
         self._status_dot = PlainLabel("●")
         self._status_text = PlainLabel()
         self._status_text.setObjectName("muted")
+        self._helper = PlainLabel("eBPF")
+        self._helper.setObjectName("helper")
+        self._helper.setVisible(False)
         self._alerts = QToolButton()
         self._alerts.setObjectName("alerts")
         self._alerts.setToolTip("Processos com sinais de suspeita")
@@ -157,6 +160,7 @@ class FloatingWidget(QWidget):
         header.addWidget(self._status_dot)
         header.addWidget(self._status_text)
         header.addStretch(1)
+        header.addWidget(self._helper)
         header.addWidget(self._alerts)
         header.addWidget(minimize)
         header.addWidget(close)
@@ -217,8 +221,8 @@ class FloatingWidget(QWidget):
         self._unattributed.setObjectName("hint")
         self._unattributed.setToolTip(
             "Diferença entre o envio medido na interface e o que foi atribuído a conexões TCP:\n"
-            "UDP/QUIC, containers, conexões que abriram e fecharam entre duas leituras\n"
-            "e cabeçalhos/ACKs do TCP."
+            "UDP/QUIC, containers, cabeçalhos/ACKs do TCP e, sem o helper,\n"
+            "conexões que abriram e fecharam entre duas leituras."
         )
         box.addWidget(self._unattributed)
         return box
@@ -283,6 +287,7 @@ class FloatingWidget(QWidget):
         self._outbound_count.setText(str(snapshot.outbound_count))
         self._update_destinations(snapshot)
         self._update_alerts(snapshot)
+        self._update_helper(snapshot)
         self._update_recent(snapshot)
 
     def _update_destinations(self, snapshot: Snapshot) -> None:
@@ -328,6 +333,21 @@ class FloatingWidget(QWidget):
         reasons = "\n".join(f"⚠ {signal.message}" for signal in summary.signals)
         trusted = "\n(marcado como confiável)" if not self._is_alert(summary) else ""
         return f"{reasons}{trusted}\n\n{details}"
+
+    def _update_helper(self, snapshot: Snapshot) -> None:
+        status = snapshot.helper_status
+        self._helper.setVisible(bool(status))
+        if not status:
+            return
+        color = STATUS_COLORS["active"] if snapshot.helper_active else STATUS_COLORS["error"]
+        self._helper.setStyleSheet(f"color: {color}; font-size: 10px; font-weight: 700;")
+        self._helper.setToolTip(
+            plain_tooltip(
+                "Helper privilegiado conectado\n"
+                f"Conexões TCP (eBPF): {status.get('tcp', '?')}\n"
+                f"Consultas DNS: {status.get('dns', '?')}"
+            )
+        )
 
     def _update_alerts(self, snapshot: Snapshot) -> None:
         alerts = untrusted_alerts(snapshot.outbound_by_process, self._trusted)

@@ -23,7 +23,7 @@ from netwatch.ui.theme import WINDOW_STYLESHEET
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, settings: Settings, platform_name: str) -> None:
+    def __init__(self, settings: Settings, platform_name: str, autostart: bool) -> None:
         super().__init__()
         self.setWindowTitle("NetWatch — Configurações")
         self.setStyleSheet(WINDOW_STYLESHEET)
@@ -54,6 +54,9 @@ class SettingsDialog(QDialog):
         self._retention.setEnabled(settings.history_enabled)
         self._history_enabled.toggled.connect(self._retention.setEnabled)
 
+        self._autostart = QCheckBox("Iniciar automaticamente ao entrar no Ubuntu")
+        self._autostart.setChecked(autostart)
+
         self._resolve_names = QCheckBox("Resolver nomes dos destinos (DNS reverso)")
         self._resolve_names.setChecked(settings.resolve_names)
         self._resolve_names.setToolTip(
@@ -76,6 +79,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout(self)
         form.addRow("Opacidade", self._opacity)
         form.addRow("Intervalo de coleta", self._interval)
+        form.addRow(self._autostart)
         form.addRow(self._always_on_top)
         form.addRow(self._prefer_xwayland)
         form.addRow(self._history_enabled)
@@ -83,6 +87,9 @@ class SettingsDialog(QDialog):
         form.addRow(self._resolve_names)
         form.addRow(platform_note)
         form.addRow(buttons)
+
+    def autostart_enabled(self) -> bool:
+        return self._autostart.isChecked()
 
     def result_settings(self) -> Settings:
         return replace(

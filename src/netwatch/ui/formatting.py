@@ -1,5 +1,5 @@
 from netwatch.models.connection import Connection, Endpoint, Protocol
-from netwatch.models.domain import RemoteName
+from netwatch.models.domain import NameSource, RemoteName
 from netwatch.models.process import ProcessIdentity
 
 UNKNOWN = "—"
@@ -96,9 +96,17 @@ def format_remote_name(name: RemoteName | None) -> str:
     return name.name if name.confirmed else f"{name.name}?"
 
 
+DNS_OBSERVED_NOTE = "Nome observado numa consulta DNS real feita nesta máquina (helper eBPF)."
+
+
 def remote_name_note(name: RemoteName | None) -> str | None:
     if name is None:
         return None
+    if name.source is NameSource.DNS_OBSERVED:
+        return DNS_OBSERVED_NOTE
+    if name.source is NameSource.DNS_AMBIGUOUS:
+        others = ", ".join(name.alternatives)
+        return f"Este IP foi resposta DNS para mais de um nome (também: {others}); a associação é incerta."
     return CONFIRMED_NOTE if name.confirmed else UNCONFIRMED_NOTE
 
 

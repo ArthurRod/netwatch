@@ -1,0 +1,58 @@
+#define AF_INET   2
+#define AF_INET6 10
+
+kprobe:tcp_connect
+{
+  let $daddr;
+  let $saddr;
+  $sk = (struct sock *)arg0;
+  $family = $sk.__sk_common.skc_family;
+  if ($family == AF_INET || $family == AF_INET6) {
+    if ($family == AF_INET) {
+      $saddr = ntop(AF_INET, $sk.__sk_common.skc_rcv_saddr);
+      $daddr = ntop(AF_INET, $sk.__sk_common.skc_daddr);
+    } else {
+      $saddr = ntop(AF_INET6, $sk.__sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+      $daddr = ntop(AF_INET6, $sk.__sk_common.skc_v6_daddr.in6_u.u6_addr8);
+    }
+    @skpid[$sk] = pid;
+    @skuid[$sk] = uid;
+    @skcomm[$sk] = comm;
+    printf("C\t%llu\t%d\t%d\t%s\t%d\t%s\t%d\t%s\n", (uint64)$sk, pid, uid, $saddr, $sk.__sk_common.skc_num,
+           $daddr, bswap($sk.__sk_common.skc_dport), comm);
+  }
+}
+
+kprobe:tcp_set_state
+{
+  let $daddr;
+  let $saddr;
+  $sk = (struct sock *)arg0;
+  $family = $sk.__sk_common.skc_family;
+  if (arg1 == TCP_CLOSE && ($family == AF_INET || $family == AF_INET6)) {
+    if ($family == AF_INET) {
+      $saddr = ntop(AF_INET, $sk.__sk_common.skc_rcv_saddr);
+      $daddr = ntop(AF_INET, $sk.__sk_common.skc_daddr);
+    } else {
+      $saddr = ntop(AF_INET6, $sk.__sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+      $daddr = ntop(AF_INET6, $sk.__sk_common.skc_v6_daddr.in6_u.u6_addr8);
+    }
+    $tp = (struct tcp_sock *)$sk;
+    $pid = @skpid[$sk];
+    $uid = @skuid[$sk];
+    $comm = @skcomm[$sk];
+    printf("X\t%llu\t%d\t%d\t%s\t%d\t%s\t%d\t%llu\t%llu\t%s\n", (uint64)$sk, $pid, $uid, $saddr,
+           $sk.__sk_common.skc_num, $daddr, bswap($sk.__sk_common.skc_dport), $tp.bytes_acked,
+           $tp.bytes_received, $comm);
+    $ignore = delete(@skpid, $sk);
+    $ignore = delete(@skuid, $sk);
+    $ignore = delete(@skcomm, $sk);
+  }
+}
+
+END
+{
+  clear(@skpid);
+  clear(@skuid);
+  clear(@skcomm);
+}

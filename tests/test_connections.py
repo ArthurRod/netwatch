@@ -136,3 +136,32 @@ def test_time_wait_is_not_counted_as_outbound():
     closed = normalize_connection(raw(("1.1.1.1", 443), pid=None, status="TIME_WAIT"), None)
     assert closed.is_closed
     assert not closed.is_outbound
+
+
+def test_new_only_filter_excludes_connections_open_at_start(qapp):
+    from netwatch.ui.connection_table import ConnectionFilterProxy, ConnectionTableModel
+
+    batches = [
+        [raw(("1.1.1.1", 443), pid=1)],
+        [raw(("1.1.1.1", 443), pid=1), raw(("2.2.2.2", 443), pid=2, local=("192.168.0.2", 50001))],
+    ]
+    times = iter([datetime(2026, 1, 1, 12, 0, 0), datetime(2026, 1, 1, 12, 0, 1)])
+    builder = SnapshotBuilder(
+        ConnectionCollector(lambda: batches.pop(0), ProcessCache(lambda pid: identity(f"p{pid}", pid))),
+        StaticStats(),
+        lambda: next(times),
+        NoSockets(),
+    )
+    builder.build()
+    snapshot = builder.build()
+    assert [c.seen_at_start for c in snapshot.connections] == [True, False]
+
+    model = ConnectionTableModel()
+    model.set_connections(list(snapshot.connections))
+    proxy = ConnectionFilterProxy()
+    proxy.setSourceModel(model)
+    proxy.set_new_since(datetime(2026, 1, 1, 11, 55))
+    assert proxy.rowCount() == 1
+    assert model.connection_at(proxy.mapToSource(proxy.index(0, 0)).row()).remote.ip == "2.2.2.2"
+    proxy.set_new_since(datetime(2026, 1, 1, 12, 0, 5))
+    assert proxy.rowCount() == 0

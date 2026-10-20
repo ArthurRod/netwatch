@@ -3,9 +3,10 @@ import sqlite3
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 BUSY_TIMEOUT_MS = 5000
 WAL_RETRY_SECONDS = 0.05
+JOURNAL_SIZE_LIMIT_BYTES = 1024 * 1024
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS connections (
@@ -40,6 +41,9 @@ MIGRATIONS = {
 ALTER TABLE connections ADD COLUMN remote_name TEXT;
 ALTER TABLE connections ADD COLUMN remote_name_confirmed INTEGER;
 """,
+    3: """
+ALTER TABLE connections ADD COLUMN remote_name_source TEXT;
+""",
 }
 
 
@@ -67,6 +71,7 @@ def open_database(path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(path, timeout=BUSY_TIMEOUT_MS / 1000)
     connection.row_factory = sqlite3.Row
     connection.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    connection.execute(f"PRAGMA journal_size_limit={JOURNAL_SIZE_LIMIT_BYTES}")
     _enable_wal(connection)
     _migrate(connection)
     _secure_file(path)

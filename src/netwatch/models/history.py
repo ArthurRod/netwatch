@@ -33,6 +33,7 @@ class HistoryEntry:
     bytes_received: int | None
     remote_name: str | None = None
     remote_name_confirmed: bool = False
+    remote_name_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

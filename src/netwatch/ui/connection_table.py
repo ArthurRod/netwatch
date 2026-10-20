@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
@@ -129,6 +130,7 @@ class ConnectionFilterProxy(QSortFilterProxyModel):
         self._protocol: Protocol | None = None
         self._process: str | None = None
         self._outbound_only = True
+        self._new_since: datetime | None = None
 
     def set_search(self, text: str) -> None:
         self.beginFilterChange()
@@ -150,9 +152,18 @@ class ConnectionFilterProxy(QSortFilterProxyModel):
         self._outbound_only = enabled
         self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
 
+    def set_new_since(self, since: datetime | None) -> None:
+        self.beginFilterChange()
+        self._new_since = since
+        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+
     def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
         connection = self.sourceModel().connection_at(source_row)
         if self._outbound_only and not connection.is_outbound:
+            return False
+        if self._new_since is not None and (
+            connection.seen_at_start or connection.first_seen is None or connection.first_seen < self._new_since
+        ):
             return False
         if self._protocol is not None and connection.protocol != self._protocol:
             return False

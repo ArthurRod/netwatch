@@ -42,7 +42,7 @@ class ProcessTrafficTracker:
         self._previous = None
         self._previous_time = None
 
-    def update(self, connections: Iterable[Connection]) -> ProcessTrafficReport:
+    def update(self, connections: Iterable[Connection], closed: Iterable[Connection] = ()) -> ProcessTrafficReport:
         now = self._clock()
         current: dict[SocketKey, SocketBytes] = {}
         sent_delta: dict[GroupKey, int] = {}
@@ -67,6 +67,21 @@ class ProcessTrafficTracker:
             received = counters.received - previous.received if previous else counters.received
             if received > 0:
                 received_delta[group] = received_delta.get(group, 0) + received
+
+        if self._previous is not None:
+            for connection in closed:
+                if not connection.is_outbound or connection.bytes_sent is None:
+                    continue
+                key = (connection.local, connection.remote)
+                baseline = current.pop(key, None) or self._previous.get(key)
+                self._remember(connection)
+                group = connection.group_key
+                sent = connection.bytes_sent - (baseline.sent if baseline else 0)
+                if sent > 0:
+                    sent_delta[group] = sent_delta.get(group, 0) + sent
+                received = (connection.bytes_received or 0) - (baseline.received if baseline else 0)
+                if received > 0:
+                    received_delta[group] = received_delta.get(group, 0) + received
 
         for name, delta in sent_delta.items():
             self._session_sent[name] = self._session_sent.get(name, 0) + delta

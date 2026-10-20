@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -28,6 +30,7 @@ from netwatch.ui.plain import PlainLabel
 from netwatch.ui.theme import WINDOW_STYLESHEET
 
 ALL = "Todos"
+NEW_WINDOW_MINUTES = 5
 
 
 class DetailsWindow(QWidget):
@@ -52,6 +55,9 @@ class DetailsWindow(QWidget):
         self._outbound_only = QCheckBox("Somente saída")
         self._outbound_only.setChecked(True)
         self._outbound_only.toggled.connect(self._proxy.set_outbound_only)
+        self._new_only = QCheckBox(f"Somente novas ({NEW_WINDOW_MINUTES} min)")
+        self._new_only.setToolTip("Conexões que apareceram nos últimos minutos e não estavam abertas quando o NetWatch iniciou")
+        self._new_only.toggled.connect(self._apply_new_filter)
         self._frozen = QCheckBox("Congelar")
         self._frozen.setToolTip("Para de atualizar a tabela enquanto você investiga")
 
@@ -62,6 +68,7 @@ class DetailsWindow(QWidget):
         filters.addWidget(PlainLabel("Processo"))
         filters.addWidget(self._process, 1)
         filters.addWidget(self._outbound_only)
+        filters.addWidget(self._new_only)
         filters.addWidget(self._frozen)
 
         self._table = QTableView()
@@ -117,6 +124,10 @@ class DetailsWindow(QWidget):
         if self._tabs.widget(index) is self._history:
             self._history.refresh()
 
+    def _apply_new_filter(self) -> None:
+        since = datetime.now() - timedelta(minutes=NEW_WINDOW_MINUTES) if self._new_only.isChecked() else None
+        self._proxy.set_new_since(since)
+
     def _on_protocol_changed(self, text: str) -> None:
         self._proxy.set_protocol(None if text == ALL else Protocol(text))
 
@@ -128,6 +139,8 @@ class DetailsWindow(QWidget):
         if self._frozen.isChecked() or not self.isVisible():
             return
         self._model.set_connections(list(snapshot.connections))
+        if self._new_only.isChecked():
+            self._apply_new_filter()
         self._restore_selection()
         self._refresh_process_options(snapshot)
         self._footer.setText(

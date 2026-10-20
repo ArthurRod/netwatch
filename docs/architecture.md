@@ -2,7 +2,8 @@
 
 ```
 ss -tinHn ─┐
-psutil ────┴► monitoring/ ──► SnapshotBuilder ──► MonitorService (QThread) ──signal──► ui/
+psutil ────┤
+helper ────┴► monitoring/ ──► SnapshotBuilder ──► MonitorService (QThread) ──signal──► ui/
            connections.py      collector.py      services/monitor_service.py       widget.py
            network_stats.py                                                         details_window.py
 ```
@@ -107,6 +108,10 @@ Nome do processo, linha de comando, caminhos e mensagens de sinal são controlad
 **Cobertura medida** (2026-10-20, uso normal com navegador): 3 de 20 destinos tinham nome. Google (IPv6), Cloudflare e Fastly não publicam PTR, confirmado com `getent hosts`.
 
 **Fonte melhor, que exige privilégio**: observar as respostas DNS reais ("o processo pediu `discord.com` e recebeu este IP"). O `systemd-resolved` tem isso (`io.systemd.Resolve.Monitor`), mas responde `InteractiveAuthenticationRequired` para usuário comum. Fica para o helper privilegiado.
+
+## Helper privilegiado
+
+Opcional. Quando o socket `/run/netwatch-helper/events.sock` existe, `services/helper_client.py` lê os eventos numa thread própria e `monitoring/helper_events.py` os converte para os modelos do app. Detalhes, segurança e protocolo em [`helper.md`](helper.md).
 
 ## Limitações conhecidas
 

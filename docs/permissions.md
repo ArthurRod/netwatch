@@ -11,7 +11,17 @@ O NetWatch roda inteiro como usuário comum.
 | Contadores das interfaces | Não | Completo |
 | Sockets em `TIME_WAIT` | — | Não têm processo dono (o kernel os mantém após o fechamento); aparecem como **"encerrada"** e não contam como saída |
 
-Para ver os processos de root seria preciso `CAP_SYS_PTRACE`/`CAP_DAC_READ_SEARCH` no interpretador, o que daria esses poderes a qualquer script Python. **Não recomendado**; uma captura privilegiada, se vier, será um helper separado e mínimo (fase 5).
+Para ver os processos de root seria preciso `CAP_SYS_PTRACE`/`CAP_DAC_READ_SEARCH` no interpretador, o que daria esses poderes a qualquer script Python. **Não recomendado.** Em vez disso, existe o helper privilegiado opcional: um serviço root separado, que só envia eventos e não aceita comandos. Veja [`helper.md`](helper.md).
+
+## Com o helper
+
+| Recurso | Como o helper obtém | Privilégio usado |
+|---|---|---|
+| Abertura e fechamento de conexões TCP | `bpftrace`: `kprobe:tcp_connect` e `kprobe:tcp_set_state` | root (eBPF; `kernel.unprivileged_bpf_disabled=2` no Ubuntu) |
+| Identidade de processos de outros usuários | `/proc/<pid>/exe`, `cwd`, `cmdline`, `stat` | root |
+| Consultas DNS | varlink `io.systemd.Resolve.Monitor` | root (o `systemd-resolved` responde `InteractiveAuthenticationRequired` para usuário comum) |
+
+A interface continua sem privilégios: ela só lê o socket do helper, que aceita apenas o UID configurado na instalação.
 
 ## GNOME + Wayland
 
