@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netwatch"
+version = "0.1.0"
+description = "Floating desktop widget that summarizes outbound network traffic on Ubuntu"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6>=6.9",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.gui-scripts]
+netwatch = "netwatch.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

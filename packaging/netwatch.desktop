@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=NetWatch
+Comment=Resumo do tráfego de rede que sai do computador
+Exec=@NETWATCH_BIN@
+Icon=network-transmit-receive
+Terminal=false
+Categories=Network;Monitor;System;
+StartupWMClass=netwatch
