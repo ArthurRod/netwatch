@@ -115,6 +115,7 @@ class Snapshot:
     remote_names: dict[str, RemoteName] = field(default_factory=dict)
     closed_connections: tuple[Connection, ...] = ()
     helper_status: dict[str, str] = field(default_factory=dict)
+    helper_connected: bool = False
 
     @property
     def helper_active(self) -> bool:

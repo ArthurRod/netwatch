@@ -336,10 +336,15 @@ class FloatingWidget(QWidget):
 
     def _update_helper(self, snapshot: Snapshot) -> None:
         status = snapshot.helper_status
-        self._helper.setVisible(bool(status))
-        if not status:
+        self._helper.setVisible(snapshot.helper_connected)
+        if not snapshot.helper_connected:
             return
-        color = STATUS_COLORS["active"] if snapshot.helper_active else STATUS_COLORS["error"]
+        if not status:
+            color = STATUS_COLORS["starting"]
+        elif snapshot.helper_active:
+            color = STATUS_COLORS["active"]
+        else:
+            color = STATUS_COLORS["error"]
         self._helper.setStyleSheet(f"color: {color}; font-size: 10px; font-weight: 700;")
         self._helper.setToolTip(
             plain_tooltip(

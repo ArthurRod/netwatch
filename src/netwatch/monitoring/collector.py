@@ -124,7 +124,7 @@ class SnapshotBuilder:
             current = [self._attribute_with_helper(c) for c in current]
         if socket_bytes is not None:
             current = attach_socket_bytes(current, socket_bytes)
-        names = self._resolve_names([*current, *helper_update.closed])
+        names = self._resolve_names(c.remote.ip for c in (*current, *helper_update.closed) if c.is_outbound)
         if names:
             current = [
                 replace(c, remote_name=names[c.remote.ip]) if c.remote and c.remote.ip in names else c
@@ -159,17 +159,23 @@ class SnapshotBuilder:
         if report is not None and report.attributed_sent_per_second is not None and traffic.sent_per_second is not None:
             unattributed_rate = max(traffic.sent_per_second - report.attributed_sent_per_second, 0.0)
 
+        summaries = summarize_outbound(connections, report)
+        displayed = [ip for summary in summaries for ip in summary.destinations]
+        displayed += [c.remote.ip for c in self._recent if c.remote]
+        names.update(self._resolve_names(ip for ip in displayed if ip not in names))
+
         return Snapshot(
             taken_at=taken_at,
             traffic=traffic,
             connections=tuple(connections),
-            outbound_by_process=summarize_outbound(connections, report),
+            outbound_by_process=summaries,
             recent_outbound=tuple(self._recent),
             unattributed_outbound=sum(1 for c in connections if c.is_outbound and c.pid is None),
             unattributed_sent_per_second=unattributed_rate,
             remote_names=names,
             closed_connections=closed,
             helper_status=self._helper.status() if self._helper is not None else {},
+            helper_connected=self._helper is not None and self._helper.client.connected,
         )
 
     def _attribute_with_helper(self, connection: Connection) -> Connection:
@@ -190,8 +196,8 @@ class SnapshotBuilder:
             recent_keys.add(key)
             self._recent.appendleft(connection)
 
-    def _resolve_names(self, connections: list[Connection]) -> dict[str, RemoteName]:
-        ips = list(dict.fromkeys(c.remote.ip for c in connections if c.is_outbound))
+    def _resolve_names(self, addresses: Iterable[str]) -> dict[str, RemoteName]:
+        ips = list(dict.fromkeys(addresses))
         names: dict[str, RemoteName] = {}
         if self._helper is not None:
             for ip in ips:

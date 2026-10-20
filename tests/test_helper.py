@@ -128,3 +128,23 @@ def test_slow_client_drops_instead_of_blocking():
         broadcaster.publish({"type": "x"})
     assert client.qsize() == helper.CLIENT_QUEUE_SIZE
     assert broadcaster.dropped == 5
+
+
+def test_new_client_receives_current_status_right_after_hello(tmp_path):
+    broadcaster = helper.Broadcaster()
+    status = helper.HelperStatus(broadcaster)
+    status.set("tcp", "running")
+    path = tmp_path / "events.sock"
+    server = helper.EventServer(path, {os.getuid()}, broadcaster, {"type": "hello"}, status.current)
+    server.start()
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(str(path))
+    client.settimeout(2)
+    data = b""
+    while data.count(b"\n") < 2:
+        data += client.recv(4096)
+    hello, current = (json.loads(line) for line in data.split(b"\n")[:2])
+    assert hello["type"] == "hello"
+    assert (current["type"], current["tcp"], current["dns"]) == ("status", "running", "starting")
+    client.close()
+    server.stop()

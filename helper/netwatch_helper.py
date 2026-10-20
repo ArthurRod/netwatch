@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 VERSION = 1
@@ -191,11 +192,19 @@ def peer_uid(connection: socket.socket) -> int:
 
 
 class EventServer:
-    def __init__(self, path: Path, allowed_uids: set[int], broadcaster: Broadcaster, hello: dict) -> None:
+    def __init__(
+        self,
+        path: Path,
+        allowed_uids: set[int],
+        broadcaster: Broadcaster,
+        hello: dict,
+        status: Callable[[], dict] | None = None,
+    ) -> None:
         self._path = path
         self._allowed = allowed_uids
         self._broadcaster = broadcaster
         self._hello = hello
+        self._status = status
         self._server: socket.socket | None = None
 
     def start(self) -> None:
@@ -230,6 +239,8 @@ class EventServer:
         connection.shutdown(socket.SHUT_RD)
         try:
             connection.sendall((json.dumps(self._hello) + "\n").encode())
+            if self._status is not None:
+                connection.sendall((json.dumps({"type": "status", "ts": time.time(), **self._status()}) + "\n").encode())
             while True:
                 connection.sendall(client.get())
         except OSError:
@@ -313,6 +324,10 @@ class HelperStatus:
         self._lock = threading.Lock()
         self.values = {"tcp": "starting", "dns": "starting"}
 
+    def current(self) -> dict:
+        with self._lock:
+            return dict(self.values)
+
     def set(self, component: str, value: str) -> None:
         with self._lock:
             if self.values.get(component) == value:
@@ -393,7 +408,7 @@ def start_components() -> tuple[Broadcaster, HelperStatus, DnsMonitor]:
 def serve() -> None:
     allowed = load_allowed_uids()
     broadcaster, status, _ = start_components()
-    server = EventServer(SOCKET_PATH, allowed, broadcaster, {"type": "hello", "version": VERSION})
+    server = EventServer(SOCKET_PATH, allowed, broadcaster, {"type": "hello", "version": VERSION}, status.current)
     server.start()
     logger.info("Serving events on %s for uids %s", SOCKET_PATH, sorted(allowed))
     try:

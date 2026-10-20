@@ -34,9 +34,24 @@ if ! /usr/bin/python3 -I "$LIB_DIR/netwatch_helper.py" --self-test; then
     exit 1
 fi
 
+started_at="$(date +%s)"
 systemctl daemon-reload
-systemctl enable --now netwatch-helper.service
-sleep 2
-systemctl --no-pager --lines=5 status netwatch-helper.service || true
-echo
-echo "Helper ativo. O NetWatch se conecta a ele automaticamente."
+systemctl enable netwatch-helper.service
+systemctl restart netwatch-helper.service
+
+echo "Aguardando as sondas eBPF dentro do serviço..."
+for _ in $(seq 1 30); do
+    log="$(journalctl -u netwatch-helper.service --since "@$started_at" --no-pager -o cat 2>/dev/null)"
+    if grep -q "tcp: running" <<<"$log"; then
+        echo "Helper ativo: conexões TCP e DNS. O NetWatch se conecta a ele automaticamente."
+        exit 0
+    fi
+    if grep -q "tcp: failed" <<<"$log"; then
+        break
+    fi
+    sleep 1
+done
+
+echo "O serviço iniciou, mas as sondas TCP não subiram dentro dele:" >&2
+journalctl -u netwatch-helper.service --since "@$started_at" --no-pager -o cat | tail -15 >&2
+exit 1

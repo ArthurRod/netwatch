@@ -20,7 +20,13 @@ Legenda: ✅ verificado de verdade · 🧪 verificado por teste automatizado que
 | Iniciar o Ubuntu | Inicia automaticamente se ativado | ✅ (parcial) | `~/.config/autostart/netwatch.desktop` gerado e validado com `desktop-file-validate`; o login real não foi refeito |
 | Executar em Wayland | Comportamento documentado | ✅ | `docs/permissions.md`: Wayland nativo ignora "sempre no topo"; via XWayland, `_NET_WM_STATE_ABOVE` e a posição foram conferidos com `xprop`/`xwininfo` |
 | Instalar e remover | Seguindo as instruções | ✅ | Ciclo completo em diretórios isolados: instalar, abrir, ativar autostart, reinstalar, recusar desinstalação com o app aberto, desinstalar mantendo dados, `--purge` sem sobras |
-| Helper privilegiado | Eventos TCP e DNS chegam ao app | ⏳ | Servidor real do helper → socket → cliente → coleta → histórico validado sem root com eventos sintéticos (`tests/test_helper_integration.py`). O programa eBPF em si só roda como root: o instalador executa um autoteste e não ativa o serviço se ele falhar. |
+| Helper privilegiado | Eventos TCP e DNS chegam ao app | ✅ | Instalado de verdade. Uma cópia do `curl` rodando de `/tmp`, com conexão de menos de 1 s, foi capturada pelo app completo: alerta alto "Rodando de pasta temporária", notificação, 1,9 KB atribuídos, entrada em "Novas conexões" e nome `www.wikipedia.org` vindo do DNS observado. O caminho `/tmp/...` do executável chega correto mesmo com o serviço no próprio namespace de montagem. Respostas DNS vindas do cache do `systemd-resolved` também são reportadas. Em 1 de 5 execuções o destino apareceu como IP em vez do nome; causa não identificada. |
+
+### Defeitos encontrados na instalação real do helper
+
+1. Com `ProtectSystem=strict` e sem `PrivateTmp`, o `/tmp` fica somente leitura e o bpftrace não sobe (`unable to create /tmp/bpftrace.XXXXXX`). O autoteste passou porque roda fora da unidade systemd. Corrigido com `PrivateTmp=yes`, e o instalador agora espera `tcp: running` **dentro do serviço** antes de declarar sucesso.
+2. Um cliente que conectava depois do início do helper nunca recebia o estado atual, então o indicador eBPF não aparecia. Corrigido: o helper envia o estado logo após o `hello`.
+3. O nome de um destino sumia da tela quando a conexão fechava. Corrigido: os nomes são calculados para todos os IPs exibidos.
 
 ## Execução longa
 

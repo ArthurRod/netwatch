@@ -49,6 +49,7 @@ Para o serviço e remove os arquivos instalados. O NetWatch volta ao modo sem pr
 | Saída do bpftrace em JSON, com o nome do processo (`comm`) sempre no **último** campo | Um processo malicioso pode se chamar `a\tb\nC…`; o JSON impede quebra de linha e o último campo absorve tabulações, sem forjar outros campos. |
 | Linha de comando sem máscara no socket; o NetWatch aplica a máscara de segredos ao receber | `/proc/<pid>/cmdline` já é legível por qualquer usuário no Ubuntu, então o socket não expõe nada novo. |
 | Unidade systemd com `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`, famílias de rede restritas e outras proteções | Limitam o que o processo root pode alterar no sistema. |
+| `PrivateTmp=yes` | O bpftrace precisa criar arquivos temporários em `/tmp`; com `ProtectSystem=strict` sem `PrivateTmp`, `/tmp` fica somente leitura e as sondas não sobem (encontrado na primeira instalação real). |
 
 **Endurecimento ainda não aplicado:** restringir capacidades (`CapabilityBoundingSet`) e tornar `/sys` somente leitura (`ProtectKernelTunables`). Ficaram de fora porque o bpftrace pode precisar delas para anexar as sondas, e isso só pode ser testado como root.
 
